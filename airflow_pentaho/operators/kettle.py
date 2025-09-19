@@ -26,6 +26,7 @@ from airflow import AirflowException
 from airflow.models import BaseOperator
 
 from airflow_pentaho.hooks.kettle import PentahoHook
+import ctypes
 
 XCOM_RETURN_KEY = 'return_value'
 
@@ -60,12 +61,23 @@ class PDIBaseOperator(BaseOperator):
                     script_location
                 )
 
+                try:
+                    libc = ctypes.CDLL(None)
+                    prctl = libc.prctl
+                    prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong,
+                                    ctypes.c_ulong, ctypes.c_ulong]
+                    prctl.restype = ctypes.c_int
+                    _HAVE_PRCTL = True
+                except Exception:
+                    _HAVE_PRCTL = False
+                    PR_SET_PDEATHSIG = 1
+                    
                 def pre_exec():
-                    # Restore default signal disposition and invoke setsid
-                    for sig in ('SIGPIPE', 'SIGXFZ', 'SIGXFSZ'):
-                        if hasattr(signal, sig):
-                            signal.signal(getattr(signal, sig), signal.SIG_DFL)
-                    os.setsid()
+                    for name in ('SIGPIPE','SIGXFZ','SIGXFSZ'):
+                        if hasattr(signal, name):
+                            signal.signal(getattr(signal, name), signal.SIG_DFL)
+                    if _HAVE_PRCTL:
+                        prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
 
                 command_line_log = PDIBaseOperator._hide_sensitive_data(
                     self.command_line)
@@ -75,7 +87,10 @@ class PDIBaseOperator(BaseOperator):
                     stdout=PIPE,
                     stderr=STDOUT,
                     cwd=tmp_dir,
-                    preexec_fn=pre_exec)
+                    preexec_fn=pre_exec,
+                    start_new_session=False,
+                    close_fds=True
+                    )
 
                 self.log.info('Output:')
                 err_count = 0
