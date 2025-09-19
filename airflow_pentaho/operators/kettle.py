@@ -70,7 +70,8 @@ class PDIBaseOperator(BaseOperator):
                     _HAVE_PRCTL = True
                 except Exception:
                     _HAVE_PRCTL = False
-                    PR_SET_PDEATHSIG = 1
+                
+                PR_SET_PDEATHSIG = 1
                     
                 def pre_exec():
                     for name in ('SIGPIPE','SIGXFZ','SIGXFSZ'):
